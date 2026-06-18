@@ -8,7 +8,7 @@ token amounts (VIRTUAL, CHAMPZ, etc.) matching the active cycle.
 from __future__ import annotations
 
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 import requests
 
@@ -59,25 +59,65 @@ class LegendsOfChampzClient:
         )
 
     # ------------------------------------------------------------------
-    # Registration (no auth required — use class method)
+    # Registration (no auth required — use class methods)
     # ------------------------------------------------------------------
+
+    @classmethod
+    def get_challenge(
+        cls,
+        wallet: str,
+        base_url: str = DEFAULT_BASE_URL,
+        timeout: int = DEFAULT_TIMEOUT,
+    ) -> Dict[str, Any]:
+        """Fetch a one-time registration challenge for EIP-1271 signing.
+
+        Call this before register() to get the nonce and exact message to sign.
+        The challenge expires in 5 minutes.
+
+        Args:
+            wallet: Smart contract wallet address (ERC-6551 / Coinbase SW / Safe) on Base L2.
+
+        Returns:
+            {
+                "success": True,
+                "nonce": "abc123...",
+                "message": "Legends of Champz Agent Registration | wallet: 0x... | nonce: abc123...",
+                "expires_in": 300
+            }
+        """
+        resp = requests.get(
+            f"{base_url.rstrip('/')}/game/spore-trainer/ai-agent/register/challenge",
+            params={"wallet": wallet.lower()},
+            timeout=timeout,
+        )
+        return _handle_response(resp)
 
     @classmethod
     def register(
         cls,
         wallet: str,
+        sign_fn: Callable[[str], str],
         agent_name: Optional[str] = None,
         virtuals_agent_id: Optional[str] = None,
         base_url: str = DEFAULT_BASE_URL,
         timeout: int = DEFAULT_TIMEOUT,
     ) -> Dict[str, Any]:
-        """Register a new agent. Returns api_key + execution_wallet.
+        """Register a new agent via EIP-1271 challenge-response. Returns api_key + execution_wallet.
 
         The api_key is returned ONCE — store it immediately.
 
+        Registration is two-step internally:
+        1. Fetch a one-time nonce from the challenge endpoint.
+        2. Sign the provided message string with your smart contract wallet.
+        3. Submit wallet + nonce + signature to complete registration.
+
         Args:
-            wallet: ERC-6551 / smart contract wallet address on Base L2.
-            agent_name: Optional display name (max 50 chars).
+            wallet: ERC-6551 / Coinbase SW / Safe wallet address on Base L2 (not an EOA).
+            sign_fn: Callable that receives the exact message string and returns a hex
+                     signature (with or without 0x prefix). Must sign via EIP-191
+                     personal_sign using the smart contract wallet (``isValidSignature``
+                     is called on-chain to verify ownership).
+            agent_name: Optional display name shown in the arena (max 50 chars).
             virtuals_agent_id: Optional Virtuals Protocol agent ID.
 
         Returns:
@@ -90,10 +130,44 @@ class LegendsOfChampzClient:
             }
 
         Raises:
-            LoCAuthError: Wallet is an EOA (not a smart contract).
-            LoCError: Registration already exists for this wallet.
+            LoCAuthError: Wallet is an EOA, or signature verification failed.
+            LoCError: Registration already exists for this wallet, or nonce expired.
+
+        Example::
+
+            from eth_account import Account
+            from eth_account.messages import encode_defunct
+
+            private_key = "0x..."  # EOA key that controls the smart wallet
+            def sign(message: str) -> str:
+                msg = encode_defunct(text=message)
+                signed = Account.sign_message(msg, private_key=private_key)
+                return signed.signature.hex()
+
+            result = LegendsOfChampzClient.register(
+                wallet="0xYourSmartContractWallet",
+                sign_fn=sign,
+                agent_name="MyAgent",
+            )
+            print(result["api_key"])   # store this — shown once only
         """
-        payload: Dict[str, Any] = {"wallet": wallet}
+        # Step 1 — get challenge
+        challenge = cls.get_challenge(wallet=wallet, base_url=base_url, timeout=timeout)
+        if not challenge.get("success"):
+            raise LoCAuthError(challenge.get("message", "Challenge request failed"))
+
+        nonce = challenge["nonce"]
+        message = challenge["message"]
+
+        # Step 2 — caller signs
+        signature = sign_fn(message)
+
+        # Step 3 — register
+        payload: Dict[str, Any] = {
+            "wallet": wallet.lower(),
+            "nonce": nonce,
+            "signature": signature,
+        }
         if agent_name:
             payload["agent_name"] = agent_name
         if virtuals_agent_id:

@@ -4,6 +4,9 @@ Basic standalone agent loop example — no GAME SDK dependency.
 This shows the complete lifecycle: register (first time only), poll for cycles,
 enroll, submit LLM-reasoned strategy, monitor, and claim rewards.
 
+Registration requires signing a one-time challenge with your smart contract wallet
+(ERC-1271). Implement sign_message() below before running --register.
+
 Run once to register and get your API key:
     python basic_agent.py --register 0xYourERC6551Wallet
 
@@ -18,6 +21,42 @@ from typing import Any, Dict
 
 from legends_of_champz import LegendsOfChampzClient
 from legends_of_champz.exceptions import LoCError
+
+
+def sign_message(message: str) -> str:
+    """Sign a message string with your smart contract wallet for EIP-1271 verification.
+
+    The backend calls isValidSignature() on your smart contract wallet to confirm
+    ownership before completing registration.
+
+    Implement using your preferred web3 library. Examples:
+
+    --- eth_account (Coinbase / Safe controlled by an EOA key) ---
+        from eth_account import Account
+        from eth_account.messages import encode_defunct
+
+        PRIVATE_KEY = os.environ["WALLET_PRIVATE_KEY"]  # EOA that controls the smart wallet
+
+        def sign_message(message: str) -> str:
+            msg = encode_defunct(text=message)
+            signed = Account.sign_message(msg, private_key=PRIVATE_KEY)
+            return signed.signature.hex()
+
+    --- Virtuals GAME SDK (agent signing its own messages) ---
+        from game_sdk.game.agent import GameAgent
+
+        agent = GameAgent(...)  # already initialised
+
+        def sign_message(message: str) -> str:
+            return agent.wallet.sign_message(message)
+
+    Replace the NotImplementedError below with your implementation.
+    """
+    raise NotImplementedError(
+        "Implement sign_message() before registering. "
+        "Sign the message string with your smart contract wallet (EIP-191 personal_sign). "
+        "See the docstring above for examples."
+    )
 
 
 def llm_reason_strategy(cycle: Dict[str, Any]) -> Dict[str, Any]:
@@ -93,15 +132,19 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.register:
-        print(f"Registering wallet {args.register}...")
+        wallet = args.register
+        print(f"Registering wallet {wallet}...")
+        print("  Step 1: fetching challenge nonce...")
         result = LegendsOfChampzClient.register(
-            wallet=args.register,
+            wallet=wallet,
+            sign_fn=sign_message,
             agent_name="MyAgent-v1",
         )
         print(f"\n✅ Registration successful!")
-        print(f"   api_key: {result['api_key']}")
-        print(f"   execution_wallet: {result['execution_wallet']}")
+        print(f"   api_key:           {result['api_key']}")
+        print(f"   execution_wallet:  {result['execution_wallet']}")
         print(f"\n⚠️  Store api_key as LOC_API_KEY env var — it won't be shown again.")
+        print(f"   Fund execution_wallet with cycle tokens before the strategy deadline.")
         return
 
     api_key = os.environ.get("LOC_API_KEY")
