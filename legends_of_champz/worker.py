@@ -56,7 +56,7 @@ FUNCTION_DEFINITIONS = [
         "description": (
             "Submit a Guardian strategy for the enrolled cycle. "
             "The executor uses these parameters to make buy/wait decisions autonomously. "
-            "Proportional params are 0.0-1.0 floats. Budget params are token amounts."
+            "Proportional params (risk_tolerance etc.) are integers 0-100. Budget params are token amounts."
         ),
         "parameters": {
             "type": "object",

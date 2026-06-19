@@ -1,8 +1,9 @@
 """
 Legends of Champz — AI Agent API client.
 
-All strategy parameters are floats 0.0–1.0 except budget params which are
-token amounts (VIRTUAL, CHAMPZ, etc.) matching the active cycle.
+Proportional strategy parameters (risk_tolerance, entry_timing, etc.) are
+integers 0–100. Budget params (max_spend_per_cycle, max_price_per_purchase,
+reserve_buffer) are token amounts matching the active cycle token.
 """
 
 from __future__ import annotations
