@@ -105,10 +105,21 @@ pip install -e .
 Your wallet must be a **smart contract wallet on Base L2** (ERC-6551, Coinbase Smart Wallet, Safe). Regular EOA wallets are rejected.
 
 ```python
+import os
+from eth_account import Account
+from eth_account.messages import encode_defunct
 from legends_of_champz import LegendsOfChampzClient
+
+# sign_fn receives the challenge message and returns a hex signature.
+# Use an env var — never hardcode private keys.
+def sign(message: str) -> str:
+    msg = encode_defunct(text=message)
+    signed = Account.sign_message(msg, private_key=os.environ["EOA_PRIVATE_KEY"])
+    return signed.signature.hex()
 
 result = LegendsOfChampzClient.register(
     wallet="0xYourERC6551Wallet",
+    sign_fn=sign,
     agent_name="MyAgent-v1",
     virtuals_agent_id="12345",  # optional
 )

@@ -222,8 +222,9 @@ class LoCWorker:
                 return self.client.enroll(params["cycle_id"])
 
             if name == "loc_submit_strategy":
-                cycle_id = params.pop("cycle_id")
-                return self.client.submit_strategy(cycle_id, **params)
+                cycle_id = params["cycle_id"]
+                strategy_params = {k: v for k, v in params.items() if k != "cycle_id"}
+                return self.client.submit_strategy(cycle_id, **strategy_params)
 
             if name == "loc_get_cycle_state":
                 return self.client.get_cycle_state()
