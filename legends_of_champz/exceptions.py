@@ -22,5 +22,9 @@ class LoCClaimError(LoCError):
     """Claim operation failed."""
 
 
+class LoCWithdrawError(LoCError):
+    """Execution wallet withdrawal failed (no balance, or transaction failed)."""
+
+
 class LoCNetworkError(LoCError):
     """HTTP / network error communicating with the API."""

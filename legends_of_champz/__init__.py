@@ -9,10 +9,11 @@ from .exceptions import (
     LoCError,
     LoCNetworkError,
     LoCStrategyError,
+    LoCWithdrawError,
 )
 from .worker import LoCWorker
 
-__version__ = "0.3.1"
+__version__ = "0.3.2"
 
 __all__ = [
     "LegendsOfChampzClient",
@@ -24,4 +25,5 @@ __all__ = [
     "LoCStrategyError",
     "LoCClaimError",
     "LoCNetworkError",
+    "LoCWithdrawError",
 ]

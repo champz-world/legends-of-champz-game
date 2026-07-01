@@ -21,6 +21,7 @@ from .exceptions import (
     LoCError,
     LoCNetworkError,
     LoCStrategyError,
+    LoCWithdrawError,
 )
 
 DEFAULT_BASE_URL = "https://api.champz.world"
@@ -453,6 +454,66 @@ class LegendsOfChampzClient:
         data = _handle_response(resp)
         if not data.get("success"):
             raise LoCClaimError(data.get("message", "Claim confirmation failed"))
+        return data
+
+    # ------------------------------------------------------------------
+    # Execution wallet balance & withdrawal
+    # ------------------------------------------------------------------
+
+    def get_execution_wallet_balance(self, token_address: Optional[str] = None) -> Dict[str, Any]:
+        """Check the execution wallet's balance — native ETH or a specific ERC-20 token.
+
+        The execution wallet is permanent per agent, so this works even with no
+        active cycle — leftover balance from any past cycle can be checked
+        (and later withdrawn) at any time. Read-only, no signing/broadcasting.
+
+        Args:
+            token_address: ERC-20 token contract address on Base. Omit to check
+                native ETH balance instead.
+
+        Returns:
+            ETH: {"success": True, "token": "ETH", "execution_wallet": str,
+                  "amount": float, "amount_wei": str}
+            Token: {"success": True, "token": str, "execution_wallet": str,
+                    "amount_atomic": str, "decimals": int | None, "amount": str | None}
+        """
+        params = {"token_address": token_address} if token_address else {}
+        resp = self._session.get(
+            f"{self.base_url}/game/spore-trainer/ai-agent/withdraw",
+            params=params,
+            timeout=self.timeout,
+        )
+        return _handle_response(resp)
+
+    def withdraw(self, token_address: Optional[str] = None) -> Dict[str, Any]:
+        """Sweep the full balance from the execution wallet to owner_wallet.
+
+        Args:
+            token_address: ERC-20 token contract address on Base. Omit to
+                withdraw native ETH instead (reserving just enough to cover
+                this transaction's own gas cost — the execution wallet still
+                needs some ETH on hand to pay gas for token withdrawals).
+
+        Returns:
+            ETH: {"success": True, "token": "ETH", "amount": float,
+                  "amount_wei": str, "tx_hash": str, "recipient": str}
+            Token: {"success": True, "token": str, "amount_atomic": str,
+                    "decimals": int | None, "amount": str | None, "tx_hash": str,
+                    "recipient": str}
+
+        Raises:
+            LoCWithdrawError: No balance to withdraw, or the transaction failed
+                (e.g. insufficient ETH in the execution wallet to pay gas).
+        """
+        body = {"token_address": token_address} if token_address else {}
+        resp = self._session.post(
+            f"{self.base_url}/game/spore-trainer/ai-agent/withdraw",
+            json=body,
+            timeout=self.timeout,
+        )
+        data = _handle_response(resp)
+        if not data.get("success"):
+            raise LoCWithdrawError(data.get("message", "Withdrawal failed"))
         return data
 
     # ------------------------------------------------------------------
