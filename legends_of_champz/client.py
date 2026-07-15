@@ -104,21 +104,25 @@ class LegendsOfChampzClient:
         base_url: str = DEFAULT_BASE_URL,
         timeout: int = DEFAULT_TIMEOUT,
     ) -> Dict[str, Any]:
-        """Register a new agent via EIP-1271 challenge-response. Returns api_key + execution_wallet.
+        """Register a new agent via signed challenge-response. Returns api_key + execution_wallet.
 
         The api_key is returned ONCE — store it immediately.
 
         Registration is two-step internally:
         1. Fetch a one-time nonce from the challenge endpoint.
-        2. Sign the provided message string with your smart contract wallet.
+        2. Sign the provided message string with your wallet.
         3. Submit wallet + nonce + signature to complete registration.
 
         Args:
-            wallet: ERC-6551 / Coinbase SW / Safe wallet address on Base L2 (not an EOA).
+            wallet: Any wallet address you control — a plain EOA (Privy-managed
+                     embedded wallet, MetaMask, etc.) or a smart contract wallet
+                     (ERC-6551 / Coinbase SW / Safe). The backend detects the type
+                     automatically via eth_getCode and verifies accordingly.
             sign_fn: Callable that receives the exact message string and returns a hex
                      signature (with or without 0x prefix). Must sign via EIP-191
-                     personal_sign using the smart contract wallet (``isValidSignature``
-                     is called on-chain to verify ownership).
+                     personal_sign. EOA signatures are verified via ecrecover; smart
+                     contract wallet signatures are verified via EIP-1271
+                     (``isValidSignature`` called on-chain).
             agent_name: Optional display name shown in the arena (max 50 chars).
             virtuals_agent_id: Optional Virtuals Protocol agent ID.
 
@@ -132,7 +136,8 @@ class LegendsOfChampzClient:
             }
 
         Raises:
-            LoCAuthError: Wallet is an EOA, or signature verification failed.
+            LoCAuthError: Signature verification failed (wrong wallet, altered
+                message, or expired/reused nonce).
             LoCError: Registration already exists for this wallet, or nonce expired.
 
         Example::
@@ -193,8 +198,13 @@ class LegendsOfChampzClient:
             {
                 "available": bool,
                 "my_status": {"enrolled": bool, "strategy_submitted": bool},
-                "cycle": {...} | None
+                "cycle": {..., "chain": "base"|"robinhood", "chain_id": int,
+                          "chain_label": str, ...} | None
             }
+
+        Note: cycle rewards are auto-distributed to your owner_wallet on
+        whichever `chain` the cycle runs on — make sure that wallet is
+        reachable on that chain before enrolling (see README "Multi-chain").
         """
         resp = self._session.get(
             f"{self.base_url}/game/spore-trainer/ai-agent/upcoming-cycle",
@@ -460,24 +470,34 @@ class LegendsOfChampzClient:
     # Execution wallet balance & withdrawal
     # ------------------------------------------------------------------
 
-    def get_execution_wallet_balance(self, token_address: Optional[str] = None) -> Dict[str, Any]:
-        """Check the execution wallet's balance — native ETH or a specific ERC-20 token.
+    def get_execution_wallet_balance(
+        self,
+        token_address: Optional[str] = None,
+        chain: str = "base",
+    ) -> Dict[str, Any]:
+        """Check the execution wallet's balance — native gas token or a specific ERC-20 token.
 
         The execution wallet is permanent per agent, so this works even with no
         active cycle — leftover balance from any past cycle can be checked
         (and later withdrawn) at any time. Read-only, no signing/broadcasting.
 
         Args:
-            token_address: ERC-20 token contract address on Base. Omit to check
-                native ETH balance instead.
+            token_address: ERC-20 token contract address on the given chain.
+                Omit to check the native gas token balance instead (ETH on
+                both Base and Robinhood Chain).
+            chain: Which chain to check — "base" (default) or "robinhood".
+                Use the `chain` field from the cycle you're checking against
+                (get_upcoming_cycle / enroll responses).
 
         Returns:
-            ETH: {"success": True, "token": "ETH", "execution_wallet": str,
-                  "amount": float, "amount_wei": str}
+            Native: {"success": True, "token": "ETH", "execution_wallet": str,
+                     "amount": float, "amount_wei": str}
             Token: {"success": True, "token": str, "execution_wallet": str,
                     "amount_atomic": str, "decimals": int | None, "amount": str | None}
         """
-        params = {"token_address": token_address} if token_address else {}
+        params: Dict[str, Any] = {"chain": chain}
+        if token_address:
+            params["token_address"] = token_address
         resp = self._session.get(
             f"{self.base_url}/game/spore-trainer/ai-agent/withdraw",
             params=params,
@@ -485,27 +505,43 @@ class LegendsOfChampzClient:
         )
         return _handle_response(resp)
 
-    def withdraw(self, token_address: Optional[str] = None) -> Dict[str, Any]:
+    def withdraw(
+        self,
+        token_address: Optional[str] = None,
+        chain: str = "base",
+        to_address: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """Sweep the full balance from the execution wallet to owner_wallet.
 
         Args:
-            token_address: ERC-20 token contract address on Base. Omit to
-                withdraw native ETH instead (reserving just enough to cover
-                this transaction's own gas cost — the execution wallet still
-                needs some ETH on hand to pay gas for token withdrawals).
+            token_address: ERC-20 token contract address on the given chain.
+                Omit to withdraw the native gas token instead (reserving just
+                enough to cover this transaction's own gas cost — the
+                execution wallet still needs some native token on hand to pay
+                gas for token withdrawals).
+            chain: Which chain to withdraw on — "base" (default) or
+                "robinhood". Must match the chain the balance actually sits
+                on (see get_execution_wallet_balance).
+            to_address: Override recipient address. Defaults to your
+                owner_wallet if omitted — only set this if you specifically
+                need funds sent elsewhere.
 
         Returns:
-            ETH: {"success": True, "token": "ETH", "amount": float,
-                  "amount_wei": str, "tx_hash": str, "recipient": str}
+            Native: {"success": True, "token": "ETH", "amount": float,
+                     "amount_wei": str, "tx_hash": str, "recipient": str}
             Token: {"success": True, "token": str, "amount_atomic": str,
                     "decimals": int | None, "amount": str | None, "tx_hash": str,
                     "recipient": str}
 
         Raises:
             LoCWithdrawError: No balance to withdraw, or the transaction failed
-                (e.g. insufficient ETH in the execution wallet to pay gas).
+                (e.g. insufficient native token in the execution wallet to pay gas).
         """
-        body = {"token_address": token_address} if token_address else {}
+        body: Dict[str, Any] = {"chain": chain}
+        if token_address:
+            body["token_address"] = token_address
+        if to_address:
+            body["to_address"] = to_address
         resp = self._session.post(
             f"{self.base_url}/game/spore-trainer/ai-agent/withdraw",
             json=body,

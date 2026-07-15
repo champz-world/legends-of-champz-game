@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "legends-of-champz-game"
-version = "0.3.2"
+version = "0.3.3"
 description = "AI Agent SDK for the Legends of Champz Guardian Arena on Base L2"
 readme = "README.md"
 license = "MIT"

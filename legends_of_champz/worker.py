@@ -181,17 +181,23 @@ FUNCTION_DEFINITIONS = [
     {
         "name": "loc_get_balance",
         "description": (
-            "Check your execution wallet's balance — native ETH or a specific ERC-20 token. "
-            "The execution wallet is permanent, so this works even with no active cycle. "
-            "Useful before deciding whether to call loc_withdraw."
+            "Check your execution wallet's balance — native gas token (ETH) or a specific "
+            "ERC-20 token, on Base or Robinhood Chain. The execution wallet is permanent, "
+            "so this works even with no active cycle. Useful before deciding whether to call "
+            "loc_withdraw."
         ),
         "parameters": {
             "type": "object",
             "properties": {
                 "token_address": {
                     "type": "string",
-                    "description": "ERC-20 token contract address on Base. Omit to check native ETH.",
-                }
+                    "description": "ERC-20 token contract address. Omit to check native ETH.",
+                },
+                "chain": {
+                    "type": "string",
+                    "enum": ["base", "robinhood"],
+                    "description": "Which chain to check. Defaults to base.",
+                },
             },
             "required": [],
         },
@@ -199,18 +205,24 @@ FUNCTION_DEFINITIONS = [
     {
         "name": "loc_withdraw",
         "description": (
-            "Sweep the full balance from your execution wallet back to your owner wallet. "
-            "Omit token_address to withdraw native ETH (reserving enough for this transaction's "
-            "own gas). Provide token_address to withdraw an ERC-20 token — the execution wallet "
-            "must still hold enough ETH to pay gas for that transfer."
+            "Sweep the full balance from your execution wallet back to your owner wallet, "
+            "on Base or Robinhood Chain. Omit token_address to withdraw native ETH (reserving "
+            "enough for this transaction's own gas). Provide token_address to withdraw an "
+            "ERC-20 token — the execution wallet must still hold enough native token to pay "
+            "gas for that transfer."
         ),
         "parameters": {
             "type": "object",
             "properties": {
                 "token_address": {
                     "type": "string",
-                    "description": "ERC-20 token contract address on Base. Omit to withdraw native ETH.",
-                }
+                    "description": "ERC-20 token contract address. Omit to withdraw native ETH.",
+                },
+                "chain": {
+                    "type": "string",
+                    "enum": ["base", "robinhood"],
+                    "description": "Which chain to withdraw on. Defaults to base.",
+                },
             },
             "required": [],
         },
@@ -233,9 +245,9 @@ class LoCWorker:
 
     name = "LegendOfChampz"
     description = (
-        "Compete in the Legends of Champz AI Agent Arena on Base L2. "
+        "Compete in the Legends of Champz AI Agent Arena on Base L2 or Robinhood Chain. "
         "Enroll in Guardian cycles, submit autonomous strategies, monitor live "
-        "competition, and claim VIRTUAL token rewards — all on-chain."
+        "competition, and claim token rewards — all on-chain."
     )
 
     def __init__(
@@ -273,10 +285,14 @@ class LoCWorker:
                 return self.client.set_chat_mode(params["mode"])
 
             if name == "loc_get_balance":
-                return self.client.get_execution_wallet_balance(params.get("token_address"))
+                return self.client.get_execution_wallet_balance(
+                    params.get("token_address"), chain=params.get("chain", "base")
+                )
 
             if name == "loc_withdraw":
-                return self.client.withdraw(params.get("token_address"))
+                return self.client.withdraw(
+                    params.get("token_address"), chain=params.get("chain", "base")
+                )
 
             return {"error": f"Unknown function: {name}"}
 
