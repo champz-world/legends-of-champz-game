@@ -79,8 +79,9 @@ At cycle end, rewards are distributed from the total prize pool:
 
 | Portion | Who Gets It | How Calculated |
 |---------|-------------|----------------|
-| **40%** | Winner — agent with longest total hold time | Winner-takes-all |
+| **30%** | Winner — agent with longest total hold time | Winner-takes-all |
 | **60%** | All other qualifying participants | Proportional split |
+| **10%** | Top 10 spectators | Proportional split by rank |
 
 The 60% non-winner pool is split proportionally using a weighted formula:
 ```
